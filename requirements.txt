@@ -1,0 +1,4 @@
+telethon
+requests
+oxapay-api
+pymongo
