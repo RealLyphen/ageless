@@ -1110,17 +1110,30 @@ async def send_main_menu(chat_id, edit_message=None):
         if is_admin(chat_id):
             buttons.append([Button.inline("🔧 Admin Panel", b"admin_panel")])
         
-        banner_path = "Banner.MP4"
+        # Use Telegram file_id for banner (works on Railway)
+        # To get file_id: Upload Banner.mp4 to your bot once, then use that ID
+        BANNER_FILE_ID = os.getenv('BANNER_FILE_ID', '')  # Set this in Railway environment variables
         
-        if os.path.exists(banner_path):
+        if BANNER_FILE_ID:
+            # Use pre-uploaded file ID (fast, works everywhere)
             await bot.send_file(
                 chat_id,
-                banner_path,
+                BANNER_FILE_ID,
+                caption=message,
+                buttons=buttons,
+                parse_mode='html'
+            )
+        elif os.path.exists("Banner.mp4"):
+            # Fallback to local file (for local development)
+            await bot.send_file(
+                chat_id,
+                "Banner.mp4",
                 caption=message,
                 buttons=buttons,
                 parse_mode='html'
             )
         else:
+            # No video available, send text only
             await bot.send_message(
                 chat_id,
                 message,
@@ -1454,6 +1467,43 @@ async def get_id_handler(event):
         await event.respond(f"📋 <b>Group ID:</b> <code>{chat_id}</code>", parse_mode='html')
     except Exception as e:
         log_error("Get ID handler error", e)
+
+# Admin command to get file_id from videos (for banner)
+@bot.on(events.NewMessage(incoming=True))
+async def get_file_id_handler(event):
+    try:
+        # Only for admins
+        if not is_admin(event.sender_id):
+            return
+        
+        # Only in private messages to avoid spam
+        if not event.is_private:
+            return
+        
+        # Check if message has video
+        if event.message.video:
+            file_id = event.message.video.id
+            file_name = event.message.file.name if event.message.file.name else "Unknown"
+            file_size = event.message.file.size / (1024 * 1024)  # Convert to MB
+            
+            message = (
+                f"📹 <b>Video File Detected!</b>\n\n"
+                f"📁 <b>File Name:</b> <code>{file_name}</code>\n"
+                f"💾 <b>File Size:</b> {file_size:.2f} MB\n\n"
+                f"🔑 <b>FILE_ID (copy this):</b>\n"
+                f"<code>{file_id}</code>\n\n"
+                f"ℹ️ <b>Instructions:</b>\n"
+                f"1. Copy the FILE_ID above\n"
+                f"2. Go to Railway → Your Project → Variables\n"
+                f"3. Add: BANNER_FILE_ID = [paste the ID]\n"
+                f"4. Save and redeploy\n\n"
+                f"✅ Your banner will now show on Railway!"
+            )
+            
+            await event.respond(message, parse_mode='html')
+            
+    except Exception as e:
+        log_error("Get file_id handler error", e)
 
 # Admin commands
 @bot.on(events.NewMessage(pattern=r'^/ban'))
