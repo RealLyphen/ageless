@@ -86,6 +86,9 @@ captcha_states = {}  # Stores captcha data: {user_id: {'answer': int, 'failed_at
 verified_users = {}  # Users who have passed captcha: {user_id: verification_timestamp}
 payment_details_change_state = {}  # Stores admin state when changing payment details
 
+# Banner cache (stores the uploaded media object for reuse)
+banner_media_cache = None
+
 # Files
 user_list_file = 'users.txt'
 user_data_file = 'user_data.json'
@@ -1110,30 +1113,46 @@ async def send_main_menu(chat_id, edit_message=None):
         if is_admin(chat_id):
             buttons.append([Button.inline("🔧 Admin Panel", b"admin_panel")])
         
-        # Use Telegram file_id for banner (works on Railway)
-        # To get file_id: Upload Banner.mp4 to your bot once, then use that ID
-        BANNER_FILE_ID = os.getenv('BANNER_FILE_ID', '')  # Set this in Railway environment variables
+        # Banner handling with caching
+        global banner_media_cache
         
-        if BANNER_FILE_ID:
-            # Use pre-uploaded file ID (fast, works everywhere)
-            await bot.send_file(
-                chat_id,
-                BANNER_FILE_ID,
-                caption=message,
-                buttons=buttons,
-                parse_mode='html'
-            )
-        elif os.path.exists("Banner.mp4"):
-            # Fallback to local file (for local development)
-            await bot.send_file(
-                chat_id,
-                "Banner.mp4",
-                caption=message,
-                buttons=buttons,
-                parse_mode='html'
-            )
-        else:
-            # No video available, send text only
+        banner_sent = False
+        
+        # Try to use cached media first (fastest, works everywhere)
+        if banner_media_cache:
+            try:
+                await bot.send_file(
+                    chat_id,
+                    banner_media_cache,
+                    caption=message,
+                    buttons=buttons,
+                    parse_mode='html'
+                )
+                banner_sent = True
+            except Exception as e:
+                # Cache is invalid, clear it and try other methods
+                banner_media_cache = None
+                log_error("Banner cache invalid, clearing", e)
+        
+        # If cache didn't work, try local file and cache it
+        if not banner_sent and os.path.exists("Banner.mp4"):
+            try:
+                sent_message = await bot.send_file(
+                    chat_id,
+                    "Banner.mp4",
+                    caption=message,
+                    buttons=buttons,
+                    parse_mode='html'
+                )
+                # Cache the media object for future use
+                if sent_message and sent_message.media:
+                    banner_media_cache = sent_message.media
+                banner_sent = True
+            except Exception as e:
+                log_error("Error sending banner from file", e)
+        
+        # If still not sent, send text only
+        if not banner_sent:
             await bot.send_message(
                 chat_id,
                 message,
@@ -1468,9 +1487,9 @@ async def get_id_handler(event):
     except Exception as e:
         log_error("Get ID handler error", e)
 
-# Admin command to get file_id from videos (for banner)
+# Admin command to set banner from uploaded video
 @bot.on(events.NewMessage(incoming=True))
-async def get_file_id_handler(event):
+async def set_banner_handler(event):
     try:
         # Only for admins
         if not is_admin(event.sender_id):
@@ -1482,28 +1501,30 @@ async def get_file_id_handler(event):
         
         # Check if message has video
         if event.message.video:
-            file_id = event.message.video.id
+            global banner_media_cache
+            
             file_name = event.message.file.name if event.message.file.name else "Unknown"
             file_size = event.message.file.size / (1024 * 1024)  # Convert to MB
             
+            # Cache this video as the banner
+            banner_media_cache = event.message.media
+            
             message = (
-                f"📹 <b>Video File Detected!</b>\n\n"
+                f"✅ <b>Banner Set Successfully!</b>\n\n"
                 f"📁 <b>File Name:</b> <code>{file_name}</code>\n"
                 f"💾 <b>File Size:</b> {file_size:.2f} MB\n\n"
-                f"🔑 <b>FILE_ID (copy this):</b>\n"
-                f"<code>{file_id}</code>\n\n"
-                f"ℹ️ <b>Instructions:</b>\n"
-                f"1. Copy the FILE_ID above\n"
-                f"2. Go to Railway → Your Project → Variables\n"
-                f"3. Add: BANNER_FILE_ID = [paste the ID]\n"
-                f"4. Save and redeploy\n\n"
-                f"✅ Your banner will now show on Railway!"
+                f"ℹ️ <b>What happened:</b>\n"
+                f"• This video is now cached as your bot banner\n"
+                f"• It will show when users start the bot\n"
+                f"• Works on Railway and all deployments\n\n"
+                f"⚠️ <b>Note:</b> The banner cache resets when you restart the bot.\n"
+                f"To make it permanent, ensure Banner.mp4 is in your project root on Railway."
             )
             
             await event.respond(message, parse_mode='html')
             
     except Exception as e:
-        log_error("Get file_id handler error", e)
+        log_error("Set banner handler error", e)
 
 # Admin commands
 @bot.on(events.NewMessage(pattern=r'^/ban'))
