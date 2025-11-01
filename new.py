@@ -116,13 +116,37 @@ STORES = {
                 "processing": "24-72 hours",
                 "description": "Free delivery only, pickup accepted | US, CA & EU"
             },
-            "samsung": {
-                "name": "📱 Samsung",
-                "fee_percentage": 20,
+            "bestbuy": {
+                "name": "📺 Best Buy",
+                "fee_percentage": 18,
                 "fee_fixed": 150,
-                "limits": {"min": 150, "max": 5000},
-                "processing": "1-8 days",
-                "description": "Latest Samsung devices | US only"
+                "limits": {"min": 150, "max": 3000},
+                "processing": "1-3 days",
+                "description": "Electronics & tech, 1 item max, no reship or pickup | US only"
+            },
+            "dyson": {
+                "name": "🌪️ Dyson",
+                "fee_percentage": 18,
+                "fee_fixed": 0,
+                "limits": {"min": 0, "max": 3000},
+                "processing": "24 hours",
+                "description": "Replacement method, 2 items max | US only"
+            },
+            "extremepc": {
+                "name": "🖥️ ExtremePC",
+                "fee_percentage": 15,
+                "fee_fixed": 0,
+                "limits": {"min": 0, "max": 3500},
+                "processing": "Instant",
+                "description": "Insider method, no item limit, reship accepted | New Zealand"
+            },
+            "meta": {
+                "name": "🥽 Meta",
+                "fee_percentage": 20,
+                "fee_fixed": 0,
+                "limits": {"min": 0, "max": 2000},
+                "processing": "5-15 days",
+                "description": "VR headsets & devices, 2 items max | Worldwide"
             },
             "playstation": {
                 "name": "🎮 PlayStation",
@@ -140,35 +164,75 @@ STORES = {
                 "processing": "Instant",
                 "description": "Smart home security, 15-20 items max, no bundles | Worldwide"
             },
-            "meta": {
-                "name": "🥽 Meta",
+            "samsung": {
+                "name": "📱 Samsung",
                 "fee_percentage": 20,
-                "fee_fixed": 0,
-                "limits": {"min": 0, "max": 2000},
-                "processing": "5-15 days",
-                "description": "VR headsets & devices, 2 items max | Worldwide"
-            },
-            "dyson": {
-                "name": "🌪️ Dyson",
-                "fee_percentage": 18,
-                "fee_fixed": 0,
-                "limits": {"min": 0, "max": 3000},
-                "processing": "24 hours",
-                "description": "Replacement method, 2 items max | US only"
-            },
-            "extremepc": {
-                "name": "🖥️ ExtremePC",
-                "fee_percentage": 15,
-                "fee_fixed": 0,
-                "limits": {"min": 0, "max": 3500},
-                "processing": "Instant",
-                "description": "Insider method, no item limit, reship accepted | New Zealand"
+                "fee_fixed": 150,
+                "limits": {"min": 150, "max": 5000},
+                "processing": "1-8 days",
+                "description": "Latest Samsung devices | US only"
             }
         }
     },
     "fashion": {
         "name": "👗 Fashion & Apparel",
         "stores": {
+            "arte_antwerp": {
+                "name": "✨ Arte Antwerp",
+                "fee_percentage": 20,
+                "fee_fixed": 0,
+                "limits": {"min": 0, "max": 1000},
+                "processing": "1-3 weeks",
+                "description": "Designer streetwear, 6 items max | US only"
+            },
+            "banana_republic": {
+                "name": "👔 Banana Republic",
+                "fee_percentage": 20,
+                "fee_fixed": 0,
+                "limits": {"min": 0, "max": 5000},
+                "processing": "1-3 weeks",
+                "description": "Business & casual wear, 10 items max | US & CA"
+            },
+            "carhartt": {
+                "name": "🧰 Carhartt",
+                "fee_percentage": 20,
+                "fee_fixed": 0,
+                "limits": {"min": 0, "max": 5000},
+                "processing": "1-3 weeks",
+                "description": "Workwear & outdoor clothing, 10 items max | US & CA"
+            },
+            "cuts_clothing": {
+                "name": "✂️ Cuts Clothing",
+                "fee_percentage": 20,
+                "fee_fixed": 0,
+                "limits": {"min": 0, "max": 5000},
+                "processing": "1-3 weeks",
+                "description": "Premium basics & essentials, 10 items max | US & CA"
+            },
+            "farfetch": {
+                "name": "👠 Farfetch",
+                "fee_percentage": 18,
+                "fee_fixed": 150,
+                "limits": {"min": 150, "max": 3000},
+                "processing": "1-2 weeks",
+                "description": "Luxury fashion & designer brands, 10 items max, reship accepted | Worldwide"
+            },
+            "hm": {
+                "name": "👕 H&M",
+                "fee_percentage": 20,
+                "fee_fixed": 0,
+                "limits": {"min": 0, "max": 2000},
+                "processing": "1-2 weeks",
+                "description": "Affordable fashion, 20 items max | US & CA"
+            },
+            "moncler": {
+                "name": "🧥 Moncler",
+                "fee_percentage": 18,
+                "fee_fixed": 150,
+                "limits": {"min": 150, "max": 5000},
+                "processing": "1-3 weeks",
+                "description": "Luxury outerwear, 5 items max | Worldwide"
+            },
             "nordstrom": {
                 "name": "🛍️ Nordstrom",
                 "fee_percentage": 20,
@@ -185,21 +249,13 @@ STORES = {
                 "processing": "1-2 weeks",
                 "description": "Premium clothing & accessories, 10 items max | US & CA"
             },
-            "moncler": {
-                "name": "🧥 Moncler",
-                "fee_percentage": 18,
-                "fee_fixed": 150,
-                "limits": {"min": 150, "max": 5000},
-                "processing": "1-3 weeks",
-                "description": "Luxury outerwear, 5 items max | Worldwide"
-            },
-            "banana_republic": {
-                "name": "👔 Banana Republic",
-                "fee_percentage": 20,
+            "tallsize_insider": {
+                "name": "📏 TallSize Insider",
+                "fee_percentage": 15,
                 "fee_fixed": 0,
-                "limits": {"min": 0, "max": 5000},
-                "processing": "1-3 weeks",
-                "description": "Business & casual wear, 10 items max | US & CA"
+                "limits": {"min": 0, "max": None},
+                "processing": "Instant",
+                "description": "Insider method, no limits, reship accepted, refund on ship | US only"
             },
             "urban_outfitters": {
                 "name": "🎨 Urban Outfitters",
@@ -209,38 +265,6 @@ STORES = {
                 "processing": "1-2 weeks",
                 "description": "Trendy clothing & lifestyle, 10 items max | US & CA"
             },
-            "hm": {
-                "name": "👕 H&M",
-                "fee_percentage": 20,
-                "fee_fixed": 0,
-                "limits": {"min": 0, "max": 2000},
-                "processing": "1-2 weeks",
-                "description": "Affordable fashion, 20 items max | US & CA"
-            },
-            "arte_antwerp": {
-                "name": "✨ Arte Antwerp",
-                "fee_percentage": 20,
-                "fee_fixed": 0,
-                "limits": {"min": 0, "max": 1000},
-                "processing": "1-3 weeks",
-                "description": "Designer streetwear, 6 items max | US only"
-            },
-            "cuts_clothing": {
-                "name": "✂️ Cuts Clothing",
-                "fee_percentage": 20,
-                "fee_fixed": 0,
-                "limits": {"min": 0, "max": 5000},
-                "processing": "1-3 weeks",
-                "description": "Premium basics & essentials, 10 items max | US & CA"
-            },
-            "carhartt": {
-                "name": "🧰 Carhartt",
-                "fee_percentage": 20,
-                "fee_fixed": 0,
-                "limits": {"min": 0, "max": 5000},
-                "processing": "1-3 weeks",
-                "description": "Workwear & outdoor clothing, 10 items max | US & CA"
-            },
             "vestige_insider": {
                 "name": "👔 Vestige Insider",
                 "fee_percentage": 15,
@@ -249,13 +273,13 @@ STORES = {
                 "processing": "Instant",
                 "description": "Insider method, no limits, reship accepted, refund on ship | US only"
             },
-            "tallsize_insider": {
-                "name": "📏 TallSize Insider",
-                "fee_percentage": 15,
-                "fee_fixed": 0,
-                "limits": {"min": 0, "max": None},
-                "processing": "Instant",
-                "description": "Insider method, no limits, reship accepted, refund on ship | US only"
+            "zara": {
+                "name": "👗 Zara",
+                "fee_percentage": 18,
+                "fee_fixed": 150,
+                "limits": {"min": 150, "max": 5000},
+                "processing": "5-25 days",
+                "description": "Fast fashion & clothing, 10 items max, reship accepted | US, CA & EU"
             }
         }
     },
@@ -296,13 +320,13 @@ STORES = {
     "retail": {
         "name": "🏬 Retail & Wholesale",
         "stores": {
-            "the_mighty_store": {
-                "name": "📦 The Mighty Store (Amazon)",
+            "insight": {
+                "name": "💡 Insight",
                 "fee_percentage": 20,
-                "fee_fixed": 150,
-                "limits": {"min": 150, "max": 20000},
-                "processing": "Instant",
-                "description": "Amazon method, 6-7 items max, shipped by Amazon only, 1mo+ old account with 5-6 orders, pickup/lockers ok, no reship | Most domains"
+                "fee_fixed": 0,
+                "limits": {"min": 0, "max": 10000},
+                "processing": "1-3 weeks",
+                "description": "High limit store, 4 items max | US only"
             },
             "sams_club": {
                 "name": "🛒 Sam's Club",
@@ -312,13 +336,21 @@ STORES = {
                 "processing": "1-8 days",
                 "description": "Replacement only, 2 items max | US only"
             },
-            "insight": {
-                "name": "💡 Insight",
+            "staples": {
+                "name": "📎 Staples",
+                "fee_percentage": 18,
+                "fee_fixed": 150,
+                "limits": {"min": 150, "max": 5000},
+                "processing": "Instant",
+                "description": "Office supplies & electronics, 2 items max, reship accepted, Apple products work fine | US only"
+            },
+            "the_mighty_store": {
+                "name": "📦 The Mighty Store (Amazon)",
                 "fee_percentage": 20,
-                "fee_fixed": 0,
-                "limits": {"min": 0, "max": 10000},
-                "processing": "1-3 weeks",
-                "description": "High limit store, 4 items max | US only"
+                "fee_fixed": 150,
+                "limits": {"min": 150, "max": 20000},
+                "processing": "Instant",
+                "description": "NEW METHOD NON PR - Amazon method, 6-7 items max, shipped by Amazon only, 1mo+ old account with 5-6 orders, pickup/lockers ok, no reship, fixing failed orders | Most domains"
             }
         }
     }
