@@ -85,6 +85,7 @@ admin_complete_order_states = {}
 captcha_states = {}  # Stores captcha data: {user_id: {'answer': int, 'failed_at': timestamp, 'ref_code': str}}
 verified_users = {}  # Users who have passed captcha: {user_id: verification_timestamp}
 payment_details_change_state = {}  # Stores admin state when changing payment details
+store_management_state = {}  # Stores admin state when managing stores: {user_id: {'action': 'add'|'edit'|'remove', 'category': str, 'store_id': str, 'step': str}}
 
 # Banner cache (stores the uploaded media object for reuse)
 banner_media_cache = None
@@ -97,6 +98,7 @@ tickets_file = 'tickets.json'
 raffles_file = 'raffles.json'
 service_orders_file = 'service_orders.json'
 payments_file = 'payments.json'
+stores_file = 'stores.json'
 
 # Create directories
 os.makedirs('transcripts', exist_ok=True)
@@ -663,13 +665,35 @@ async def process_referral_reward(user_id, deposit_amount):
         log_error(f"Failed to process referral reward for user {user_id}", e)
         return None
 
-def calculate_fee(order_total, fee_percentage, fee_fixed):
+def calculate_fee(order_total, fee_percentage):
+    """Calculate fee based on percentage only (no fixed fee)"""
     try:
         total = float(order_total)
-        fee = (total * fee_percentage / 100) + fee_fixed
+        fee = (total * fee_percentage / 100)
         return round(fee, 2)
     except:
         return 0
+
+def load_stores():
+    """Load stores from JSON file, fallback to hardcoded STORES if file doesn't exist"""
+    try:
+        if os.path.exists(stores_file):
+            stores = load_json(stores_file)
+            if stores:
+                return stores
+    except Exception as e:
+        log_error("Failed to load stores.json", e)
+    # Fallback to hardcoded STORES
+    return STORES
+
+def save_stores(stores_data):
+    """Save stores to JSON file"""
+    try:
+        save_json(stores_file, stores_data)
+        return True
+    except Exception as e:
+        log_error("Failed to save stores.json", e)
+        return False
 
 # Wallet Functions
 def add_to_wallet(user_id, amount, description="Deposit"):
@@ -1976,11 +2000,9 @@ async def show_order_confirmation(event):
         
         try:
             order_total = float(data['order_total'])
-            fee = calculate_fee(order_total, store_info['fee_percentage'], store_info['fee_fixed'])
-            total_with_fee = order_total + fee
+            fee = calculate_fee(order_total, store_info['fee_percentage'])
         except:
             fee = 0
-            total_with_fee = 0
         
         message = (
             f"✅ <b>Order Confirmation</b>\n\n"
@@ -1990,8 +2012,8 @@ async def show_order_confirmation(event):
             f"• Phone: {data['phone_number']}\n\n"
             f"<b>💰 Payment Breakdown</b>\n"
             f"• Order Total: ${data['order_total']}\n"
-            f"• Processing Fee: ${fee} ({store_info['fee_percentage']}% + ${store_info['fee_fixed']})\n"
-            f"• <b>Total Amount: ${total_with_fee}</b>\n\n"
+            f"• Processing Fee ({store_info['fee_percentage']}%): ${fee}\n"
+            f"• <b>Amount to Pay: ${fee}</b>\n\n"
             f"<b>📦 Order Information</b>\n"
             f"• Order #: {data['order_number']}\n"
             f"• Track #: {data['track_number']}\n\n"
@@ -2430,6 +2452,177 @@ async def message_handler(event):
         # Admin complete order state
         if is_admin(user_id) and user_id in admin_complete_order_states and event.is_private:
             await handle_admin_complete_order(event)
+            return
+        
+        # Store management state
+        if is_admin(user_id) and user_id in store_management_state and event.is_private:
+            state = store_management_state[user_id]
+            text = event.message.text or ""
+            
+            if text.lower() == '/cancel':
+                del store_management_state[user_id]
+                await event.respond("❌ Store management cancelled.")
+                return
+            
+            step = state['step']
+            action = state['action']
+            
+            if step == 'category_name':
+                # Create new category
+                category_id = text.lower().replace(' ', '_').replace('&', '').replace(',', '')[:50]
+                category_name = text.strip()
+                
+                stores_data = load_stores()
+                stores_data[category_id] = {
+                    'name': category_name,
+                    'stores': {}
+                }
+                
+                if save_stores(stores_data):
+                    state['category'] = category_id
+                    state['step'] = 'store_name'
+                    await event.respond(
+                        f"✅ Category '{category_name}' created!\n\n"
+                        f"📝 <b>Step 1/6: Store Name</b>\n\n"
+                        f"Enter the store name:\n"
+                        f"<i>Example: 📦 Amazon, 🍎 Apple, etc.</i>",
+                        parse_mode='html'
+                    )
+                else:
+                    await event.respond("❌ Failed to create category. Please try again.")
+                    del store_management_state[user_id]
+            
+            elif step == 'store_name':
+                state['store_data']['name'] = text.strip()
+                state['step'] = 'fee_percentage'
+                await event.respond(
+                    f"✅ Store name: {text.strip()}\n\n"
+                    f"📝 <b>Step 2/6: Fee Percentage</b>\n\n"
+                    f"Enter fee percentage (numbers only):\n"
+                    f"<i>Example: 18, 20, 15 (for 18%, 20%, 15%)</i>",
+                    parse_mode='html'
+                )
+            
+            elif step == 'fee_percentage':
+                try:
+                    fee_pct = float(text.strip())
+                    if fee_pct < 0 or fee_pct > 100:
+                        raise ValueError()
+                    state['store_data']['fee_percentage'] = fee_pct
+                    state['step'] = 'min_limit'
+                    await event.respond(
+                        f"✅ Fee percentage: {fee_pct}%\n\n"
+                        f"📝 <b>Step 3/6: Minimum Limit</b>\n\n"
+                        f"Enter minimum order limit (USD):\n"
+                        f"<i>Example: 0, 150, 200</i>",
+                        parse_mode='html'
+                    )
+                except:
+                    await event.respond("❌ Invalid percentage. Please enter a number between 0 and 100.")
+            
+            elif step == 'min_limit':
+                try:
+                    min_limit = float(text.strip())
+                    if min_limit < 0:
+                        raise ValueError()
+                    state['store_data']['limits'] = {'min': min_limit}
+                    state['step'] = 'max_limit'
+                    await event.respond(
+                        f"✅ Minimum limit: ${min_limit}\n\n"
+                        f"📝 <b>Step 4/6: Maximum Limit</b>\n\n"
+                        f"Enter maximum order limit (USD) or 'none' for unlimited:\n"
+                        f"<i>Example: 5000, 10000, none</i>",
+                        parse_mode='html'
+                    )
+                except:
+                    await event.respond("❌ Invalid amount. Please enter a positive number.")
+            
+            elif step == 'max_limit':
+                try:
+                    max_text = text.strip().lower()
+                    if max_text == 'none' or max_text == 'unlimited':
+                        state['store_data']['limits']['max'] = None
+                    else:
+                        max_limit = float(max_text)
+                        if max_limit < state['store_data']['limits']['min']:
+                            raise ValueError("Max must be >= min")
+                        state['store_data']['limits']['max'] = max_limit
+                    
+                    state['step'] = 'processing_time'
+                    max_display = "Unlimited" if state['store_data']['limits']['max'] is None else f"${state['store_data']['limits']['max']}"
+                    await event.respond(
+                        f"✅ Maximum limit: {max_display}\n\n"
+                        f"📝 <b>Step 5/6: Processing Time</b>\n\n"
+                        f"Enter processing time:\n"
+                        f"<i>Example: Instant, 24-72 hours, 1-3 days, 1-2 weeks</i>",
+                        parse_mode='html'
+                    )
+                except ValueError as e:
+                    await event.respond(f"❌ Invalid amount. {str(e)}")
+            
+            elif step == 'processing_time':
+                state['store_data']['processing'] = text.strip()
+                state['step'] = 'description'
+                
+                description_examples = (
+                    "📝 <b>Step 6/6: Description</b>\n\n"
+                    "Enter store description with examples:\n\n"
+                    "<b>Examples:</b>\n"
+                    "• Free delivery only, pickup accepted | US, CA & EU\n"
+                    "• Electronics & tech, 1 item max, no reship or pickup | US only\n"
+                    "• Replacement method, 2 items max | US only\n"
+                    "• Insider method, no item limit, reship accepted | New Zealand\n"
+                    "• High limit store, 4 items max | US only\n\n"
+                    "<i>Include: item limits, shipping options, regions, special notes</i>"
+                )
+                
+                await event.respond(description_examples, parse_mode='html')
+            
+            elif step == 'description':
+                state['store_data']['description'] = text.strip()
+                
+                # Generate store_id from name
+                store_name = state['store_data']['name']
+                store_id = store_name.lower().replace(' ', '_').replace('📦', '').replace('🍎', '').replace('📺', '').replace('🌪️', '').replace('🖥️', '').replace('🥽', '').replace('🎮', '').replace('🔔', '').replace('📱', '').replace('✨', '').replace('👔', '').replace('🧰', '').replace('✂️', '').replace('👠', '').replace('👕', '').replace('🧥', '').replace('🛍️', '').replace('🐎', '').replace('📏', '').replace('🎨', '').replace('👗', '').replace('🧢', '').replace('🏈', '').replace('🛏️', '').replace('💡', '').replace('🛒', '').replace('📎', '').strip()[:50]
+                store_id = ''.join(c for c in store_id if c.isalnum() or c == '_')
+                
+                if not store_id:
+                    store_id = f"store_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                
+                # Save store
+                stores_data = load_stores()
+                category = state['category']
+                
+                if action == 'add':
+                    stores_data[category]['stores'][store_id] = state['store_data']
+                    action_text = "added"
+                else:  # edit
+                    old_store_id = state.get('store_id', store_id)
+                    if old_store_id != store_id:
+                        # Store ID changed, remove old and add new
+                        if old_store_id in stores_data[category]['stores']:
+                            del stores_data[category]['stores'][old_store_id]
+                        stores_data[category]['stores'][store_id] = state['store_data']
+                    else:
+                        stores_data[category]['stores'][store_id] = state['store_data']
+                    action_text = "updated"
+                
+                if save_stores(stores_data):
+                    del store_management_state[user_id]
+                    await event.respond(
+                        f"✅ <b>Store {action_text} successfully!</b>\n\n"
+                        f"🏪 <b>{state['store_data']['name']}</b>\n"
+                        f"📂 Category: {stores_data[category]['name']}\n"
+                        f"💰 Fee: {state['store_data']['fee_percentage']}%\n"
+                        f"📊 Limits: ${state['store_data']['limits']['min']} - "
+                        f"{'Unlimited' if state['store_data']['limits']['max'] is None else '$' + str(state['store_data']['limits']['max'])}\n"
+                        f"⏱ Processing: {state['store_data']['processing']}\n\n"
+                        f"<i>Store is now available for customers!</i>",
+                        parse_mode='html'
+                    )
+                else:
+                    await event.respond("❌ Failed to save store. Please try again.")
+                    del store_management_state[user_id]
             return
         
         # Active ticket conversation
@@ -3478,9 +3671,10 @@ async def callback_handler(event):
         # Category view
         elif data.startswith("cat_"):
             category = data.replace("cat_", "")
-            if category in STORES:
-                stores = STORES[category]['stores']
-                category_name = STORES[category]['name']
+            stores_data = load_stores()
+            if category in stores_data:
+                stores = stores_data[category]['stores']
+                category_name = stores_data[category]['name']
                 
                 message = f"{category_name}\n\n<i>Select a store to view details:</i>\n\n"
                 
@@ -3488,7 +3682,7 @@ async def callback_handler(event):
                     limits = store['limits']
                     message += (
                         f"{store['name']}\n"
-                        f"<i>💰 Fee: {store['fee_percentage']}% + ${store['fee_fixed']} • "
+                        f"<i>💰 Fee: {store['fee_percentage']}% • "
                         f"Range: ${limits['min']}-${limits['max']} • "
                         f"Time: {store['processing']}</i>\n\n"
                     )
@@ -3509,21 +3703,20 @@ async def callback_handler(event):
             category = parts[1]
             store_id = parts[2]
             
-            if category in STORES and store_id in STORES[category]['stores']:
-                store = STORES[category]['stores'][store_id]
+            stores_data = load_stores()
+            if category in stores_data and store_id in stores_data[category]['stores']:
+                store = stores_data[category]['stores'][store_id]
                 limits = store['limits']
                 
                 example_order = 100
-                example_fee = calculate_fee(example_order, store['fee_percentage'], store['fee_fixed'])
-                example_total = example_order + example_fee
+                example_fee = calculate_fee(example_order, store['fee_percentage'])
                 
                 message = (
                     f"{store['name']}\n\n"
                     f"<b>📋 Store Information</b>\n\n"
                     f"<b>💰 Fee Structure</b>\n"
-                    f"• Base Fee: {store['fee_percentage']}%\n"
-                    f"• Fixed Fee: ${store['fee_fixed']}\n"
-                    f"• Example: $100 → ${example_fee} fee (Total: ${example_total})\n\n"
+                    f"• Fee: {store['fee_percentage']}%\n"
+                    f"• Example: $100 order → ${example_fee} fee (You pay only ${example_fee})\n\n"
                     f"<b>📊 Order Limits</b>\n"
                     f"• Minimum: ${limits['min']}\n"
                     f"• Maximum: ${limits['max']}\n\n"
@@ -3546,8 +3739,9 @@ async def callback_handler(event):
             category = parts[1]
             store_id = parts[2]
             
-            if category in STORES and store_id in STORES[category]['stores']:
-                store = STORES[category]['stores'][store_id]
+            stores_data = load_stores()
+            if category in stores_data and store_id in stores_data[category]['stores']:
+                store = stores_data[category]['stores'][store_id]
                 
                 message = (
                     f"🛒 <b>Place Order - {store['name']}</b>\n\n"
@@ -3576,11 +3770,9 @@ async def callback_handler(event):
                 
                 try:
                     order_total = float(order_data['order_total'])
-                    fee = calculate_fee(order_total, store_info['fee_percentage'], store_info['fee_fixed'])
-                    total_with_fee = order_total + fee
+                    fee = calculate_fee(order_total, store_info['fee_percentage'])
                 except:
                     fee = 0
-                    total_with_fee = 0
                 
                 user_data = get_user_data(user_id)
                 user_name = user_data['name']
@@ -3594,9 +3786,9 @@ async def callback_handler(event):
                     f"👤 {user_name} (ID: {user_id})\n"
                     f"🏪 {store_info['name']}\n\n"
                     f"<b>💰 Financial</b>\n"
-                    f"• Subtotal: ${order_data['order_total']}\n"
-                    f"• Fee: ${fee}\n"
-                    f"• <b>Total: ${total_with_fee}</b>\n\n"
+                    f"• Order Total: ${order_data['order_total']}\n"
+                    f"• Fee ({store_info['fee_percentage']}%): ${fee}\n"
+                    f"• <b>Customer Pays: ${fee}</b>\n\n"
                     f"👤 {order_data['first_name']} {order_data['last_name']}\n"
                     f"📱 {order_data['phone_number']}\n\n"
                     f"📦 Order #: {order_data['order_number']}\n"
@@ -3623,7 +3815,7 @@ async def callback_handler(event):
                     f"✅ <b>Order Submitted!</b>\n\n"
                     f"🆔 <code>{order_id}</code>\n"
                     f"🏪 {store_info['name']}\n"
-                    f"💰 Total: <code>${total_with_fee}</code>\n\n"
+                    f"💰 Amount to Pay: <code>${fee}</code>\n\n"
                     f"📨 <b>Order is being reviewed</b>\n\n"
                     f"⏱ Estimated: <i>{store_info['processing']}</i>\n"
                     f"💬 Updates via DM\n\n"
@@ -3885,11 +4077,9 @@ async def callback_handler(event):
             
             try:
                 total = float(order['order_data']['order_total'])
-                fee = calculate_fee(total, order['store_info']['fee_percentage'], order['store_info']['fee_fixed'])
-                total_with_fee = total + fee
+                fee = calculate_fee(total, order['store_info']['fee_percentage'])
             except:
                 fee = 0
-                total_with_fee = 0
             
             message = (
                 f"📦 <b>Order Details</b>\n\n"
@@ -3897,9 +4087,9 @@ async def callback_handler(event):
                 f"📊 Status: {status_text}\n"
                 f"💳 Payment: {payment_text}\n\n"
                 f"🏪 {order['store_info']['name']}\n"
-                f"💰 Amount: ${order['order_data']['order_total']}\n"
-                f"💵 Fee: ${fee}\n"
-                f"💸 Total: <b>${total_with_fee}</b>\n\n"
+                f"💰 Order Total: ${order['order_data']['order_total']}\n"
+                f"💵 Fee ({order['store_info']['fee_percentage']}%): ${fee}\n"
+                f"💸 Amount Paid: <b>${fee}</b>\n\n"
                 f"📅 Ordered: {order['timestamp']}\n"
                 f"📦 Order #: {order['order_data']['order_number']}\n"
                 f"📍 Track: {order['order_data']['track_number']}\n\n"
@@ -4019,10 +4209,9 @@ async def callback_handler(event):
             
             try:
                 total = float(order['order_data']['order_total'])
-                fee = calculate_fee(total, order['store_info']['fee_percentage'], order['store_info']['fee_fixed'])
-                total_with_fee = total + fee
+                fee = calculate_fee(total, order['store_info']['fee_percentage'])
             except:
-                total_with_fee = 0
+                fee = 0
             
             customer_id = order['user_id']
             customer_balance = get_wallet_balance(customer_id)
@@ -4034,8 +4223,8 @@ async def callback_handler(event):
                 f"🏪 Store: {order['store_info']['name']}\n\n"
                 f"<b>💵 Payment Details:</b>\n"
                 f"• Order Total: ${order['order_data']['order_total']}\n"
-                f"• Processing Fee: ${fee}\n"
-                f"• <b>Total Amount: ${total_with_fee}</b>\n\n"
+                f"• Processing Fee ({order['store_info']['fee_percentage']}%): ${fee}\n"
+                f"• <b>Amount to Pay: ${fee}</b>\n\n"
                 f"💰 Your Wallet: <b>${customer_balance:.2f}</b>\n\n"
                 f"<i>Choose payment method:</i>"
             )
@@ -4047,7 +4236,7 @@ async def callback_handler(event):
             
             await bot.send_message(customer_id, payment_message, buttons=payment_buttons, parse_mode='html')
             
-            add_order_remark(order_id, f"💰 Payment request sent - Amount: ${total_with_fee}")
+            add_order_remark(order_id, f"💰 Payment request sent - Amount: ${fee}")
             
             await event.answer("✅ Payment request sent to customer!", alert=True)
         
@@ -4062,8 +4251,7 @@ async def callback_handler(event):
             
             try:
                 total = float(order['order_data']['order_total'])
-                fee = calculate_fee(total, order['store_info']['fee_percentage'], order['store_info']['fee_fixed'])
-                total_with_fee = total + fee
+                fee = calculate_fee(total, order['store_info']['fee_percentage'])
             except:
                 await event.answer("❌ Error calculating amount", alert=True)
                 return
@@ -4071,14 +4259,14 @@ async def callback_handler(event):
             # Check wallet balance
             balance = get_wallet_balance(user_id)
             
-            if balance < total_with_fee:
-                await event.answer(f"❌ Insufficient balance. You need ${total_with_fee:.2f} but have ${balance:.2f}", alert=True)
+            if balance < fee:
+                await event.answer(f"❌ Insufficient balance. You need ${fee:.2f} but have ${balance:.2f}", alert=True)
                 return
             
-            # Deduct from wallet
-            if deduct_from_wallet(user_id, total_with_fee, f"Order Payment - {order_id}"):
+            # Deduct from wallet (only fee, not order_total + fee)
+            if deduct_from_wallet(user_id, fee, f"Order Payment - {order_id}"):
                 update_order(order_id, {'payment_status': 'paid', 'status': 'processing'})
-                add_order_remark(order_id, f"✅ Payment received via wallet - ${total_with_fee}")
+                add_order_remark(order_id, f"✅ Payment received via wallet - ${fee}")
                 
                 await event.answer("✅ Payment successful!", alert=True)
                 
@@ -4087,7 +4275,7 @@ async def callback_handler(event):
                     user_id,
                     f"✅ <b>Payment Successful!</b>\n\n"
                     f"🆔 Order: <code>{order_id}</code>\n"
-                    f"💰 Amount: ${total_with_fee}\n"
+                    f"💰 Amount Paid: ${fee}\n"
                     f"💳 Method: Wallet\n\n"
                     f"⏳ <i>Your order is now being processed!</i>",
                     parse_mode='html'
@@ -4103,7 +4291,7 @@ async def callback_handler(event):
                             f"💰 <b>Payment Received!</b>\n\n"
                             f"🆔 Order: <code>{order_id}</code>\n"
                             f"👤 User: {user_data['name']} (<code>{user_id}</code>)\n"
-                            f"💵 Amount: ${total_with_fee}\n"
+                            f"💵 Amount: ${fee}\n"
                             f"💳 Method: Wallet\n\n"
                             f"✅ <i>Ready to complete order</i>",
                             buttons=[[Button.inline("✅ Complete Order", f"complete_order_{order_id}".encode())]],
@@ -4131,16 +4319,15 @@ async def callback_handler(event):
             
             try:
                 total = float(order['order_data']['order_total'])
-                fee = calculate_fee(total, order['store_info']['fee_percentage'], order['store_info']['fee_fixed'])
-                total_with_fee = total + fee
+                fee = calculate_fee(total, order['store_info']['fee_percentage'])
             except:
                 await event.answer("❌ Error calculating amount", alert=True)
                 return
             
-            # Create payment
+            # Create payment (only fee, not order_total + fee)
             payment_link, payment_id = await create_payment(
                 user_id,
-                total_with_fee,
+                fee,
                 f"Order Payment - {order_id}",
                 f"ORDER-{order_id}"
             )
@@ -4155,7 +4342,7 @@ async def callback_handler(event):
                 message = (
                     f"💳 <b>Crypto Payment</b>\n\n"
                     f"🆔 Order: <code>{order_id}</code>\n"
-                    f"💰 Amount: <b>${total_with_fee}</b>\n\n"
+                    f"💰 Amount to Pay: <b>${fee}</b>\n\n"
                     f"<b>Payment Instructions:</b>\n"
                     f"1️⃣ Click the payment link below\n"
                     f"2️⃣ Complete the cryptocurrency payment\n"
@@ -4512,6 +4699,7 @@ async def callback_handler(event):
                  Button.inline("⚙️ Service Orders", b"admin_service_orders")],
                 [Button.inline("🎫 Tickets", b"admin_tickets"),
                  Button.inline("👥 User Stats", b"admin_user_stats")],
+                [Button.inline("🛍️ Store Manage", b"admin_store_manage")],
                 [Button.inline("🎁 Create Raffle", b"create_raffle"),
                  Button.inline("📊 Error Logs", b"admin_logs")],
                 [Button.inline("💳 Change Payment Details", b"change_payment_details")],
@@ -4607,6 +4795,261 @@ async def callback_handler(event):
             buttons.append([Button.inline("🔙 Service Orders", b"admin_service_orders")])
             
             await safe_edit(event, message, buttons=buttons)
+        
+        # Admin: Store Management
+        elif data == "admin_store_manage":
+            if not is_admin(user_id):
+                await event.answer("❌ Admin only!", alert=True)
+                return
+            
+            stores_data = load_stores()
+            total_stores = sum(len(cat['stores']) for cat in stores_data.values())
+            
+            message = (
+                f"🛍️ <b>Store Management</b>\n\n"
+                f"📊 <b>Statistics:</b>\n"
+                f"• Total Categories: {len(stores_data)}\n"
+                f"• Total Stores: {total_stores}\n\n"
+                f"<i>Select an action:</i>"
+            )
+            
+            buttons = [
+                [Button.inline("➕ Add Store", b"admin_store_add_category")],
+                [Button.inline("✏️ Edit Store", b"admin_store_edit_category")],
+                [Button.inline("🗑️ Remove Store", b"admin_store_remove_category")],
+                [Button.inline("🔙 Admin Panel", b"admin_panel")]
+            ]
+            
+            await safe_edit(event, message, buttons=buttons)
+        
+        # Admin: Add Store - Select Category
+        elif data == "admin_store_add_category":
+            if not is_admin(user_id):
+                await event.answer("❌ Admin only!", alert=True)
+                return
+            
+            stores_data = load_stores()
+            message = "📂 <b>Select Category for New Store</b>\n\n<i>Or create a new category:</i>"
+            
+            buttons = []
+            for cat_id, cat_data in stores_data.items():
+                buttons.append([Button.inline(cat_data['name'], f"admin_store_add_{cat_id}".encode())])
+            
+            buttons.append([Button.inline("➕ New Category", b"admin_store_add_new_category")])
+            buttons.append([Button.inline("🔙 Store Manage", b"admin_store_manage")])
+            
+            await safe_edit(event, message, buttons=buttons)
+        
+        # Admin: Add Store - New Category
+        elif data == "admin_store_add_new_category":
+            if not is_admin(user_id):
+                await event.answer("❌ Admin only!", alert=True)
+                return
+            
+            store_management_state[user_id] = {
+                'action': 'add',
+                'step': 'category_name',
+                'store_data': {}
+            }
+            
+            await bot.send_message(
+                user_id,
+                "📂 <b>Create New Category</b>\n\n"
+                "Enter the category name:\n"
+                "<i>Example: Electronics & Tech, Fashion & Apparel, etc.</i>\n\n"
+                "(Type /cancel to abort)",
+                parse_mode='html'
+            )
+            
+            await event.answer("📝 Send category name in bot DM", alert=True)
+        
+        # Admin: Add Store - Start Process
+        elif data.startswith("admin_store_add_"):
+            if not is_admin(user_id):
+                await event.answer("❌ Admin only!", alert=True)
+                return
+            
+            category = data.replace("admin_store_add_", "")
+            stores_data = load_stores()
+            
+            if category not in stores_data:
+                await event.answer("❌ Category not found", alert=True)
+                return
+            
+            store_management_state[user_id] = {
+                'action': 'add',
+                'category': category,
+                'step': 'store_name',
+                'store_data': {}
+            }
+            
+            await bot.send_message(
+                user_id,
+                "➕ <b>Add New Store</b>\n\n"
+                "📝 <b>Step 1/6: Store Name</b>\n\n"
+                "Enter the store name:\n"
+                "<i>Example: 📦 Amazon, 🍎 Apple, etc.</i>\n\n"
+                "(Type /cancel to abort)",
+                parse_mode='html'
+            )
+            
+            await event.answer("📝 Send store name in bot DM", alert=True)
+        
+        # Admin: Edit Store - Select Category
+        elif data == "admin_store_edit_category":
+            if not is_admin(user_id):
+                await event.answer("❌ Admin only!", alert=True)
+                return
+            
+            stores_data = load_stores()
+            message = "📂 <b>Select Category</b>\n\n<i>Choose category to edit stores:</i>"
+            
+            buttons = []
+            for cat_id, cat_data in stores_data.items():
+                store_count = len(cat_data['stores'])
+                buttons.append([Button.inline(f"{cat_data['name']} ({store_count} stores)", f"admin_store_edit_list_{cat_id}".encode())])
+            
+            buttons.append([Button.inline("🔙 Store Manage", b"admin_store_manage")])
+            
+            await safe_edit(event, message, buttons=buttons)
+        
+        # Admin: Edit Store - List Stores
+        elif data.startswith("admin_store_edit_list_"):
+            if not is_admin(user_id):
+                await event.answer("❌ Admin only!", alert=True)
+                return
+            
+            category = data.replace("admin_store_edit_list_", "")
+            stores_data = load_stores()
+            
+            if category not in stores_data:
+                await event.answer("❌ Category not found", alert=True)
+                return
+            
+            stores = stores_data[category]['stores']
+            message = f"✏️ <b>Edit Store - {stores_data[category]['name']}</b>\n\n<i>Select a store to edit:</i>"
+            
+            buttons = []
+            for store_id, store in stores.items():
+                buttons.append([Button.inline(store['name'], f"admin_store_edit_{category}_{store_id}".encode())])
+            
+            buttons.append([Button.inline("🔙 Categories", b"admin_store_edit_category")])
+            
+            await safe_edit(event, message, buttons=buttons)
+        
+        # Admin: Edit Store - Start Edit
+        elif data.startswith("admin_store_edit_") and not data.startswith("admin_store_edit_list_"):
+            if not is_admin(user_id):
+                await event.answer("❌ Admin only!", alert=True)
+                return
+            
+            parts = data.replace("admin_store_edit_", "").split("_", 1)
+            if len(parts) == 2:
+                category = parts[0]
+                store_id = parts[1]
+                
+                stores_data = load_stores()
+                if category in stores_data and store_id in stores_data[category]['stores']:
+                    store_management_state[user_id] = {
+                        'action': 'edit',
+                        'category': category,
+                        'store_id': store_id,
+                        'step': 'store_name',
+                        'store_data': stores_data[category]['stores'][store_id].copy()
+                    }
+                    
+                    await bot.send_message(
+                        user_id,
+                        f"✏️ <b>Edit Store</b>\n\n"
+                        f"📝 <b>Step 1/6: Store Name</b>\n\n"
+                        f"Current: {stores_data[category]['stores'][store_id]['name']}\n\n"
+                        f"Enter new store name (or send current to keep):\n"
+                        f"<i>Example: 📦 Amazon, 🍎 Apple, etc.</i>\n\n"
+                        f"(Type /cancel to abort)",
+                        parse_mode='html'
+                    )
+                    
+                    await event.answer("📝 Send store name in bot DM", alert=True)
+        
+        # Admin: Remove Store - Select Category
+        elif data == "admin_store_remove_category":
+            if not is_admin(user_id):
+                await event.answer("❌ Admin only!", alert=True)
+                return
+            
+            stores_data = load_stores()
+            message = "📂 <b>Select Category</b>\n\n<i>Choose category to remove stores:</i>"
+            
+            buttons = []
+            for cat_id, cat_data in stores_data.items():
+                store_count = len(cat_data['stores'])
+                buttons.append([Button.inline(f"{cat_data['name']} ({store_count} stores)", f"admin_store_remove_list_{cat_id}".encode())])
+            
+            buttons.append([Button.inline("🔙 Store Manage", b"admin_store_manage")])
+            
+            await safe_edit(event, message, buttons=buttons)
+        
+        # Admin: Remove Store - List Stores
+        elif data.startswith("admin_store_remove_list_"):
+            if not is_admin(user_id):
+                await event.answer("❌ Admin only!", alert=True)
+                return
+            
+            category = data.replace("admin_store_remove_list_", "")
+            stores_data = load_stores()
+            
+            if category not in stores_data:
+                await event.answer("❌ Category not found", alert=True)
+                return
+            
+            stores = stores_data[category]['stores']
+            message = f"🗑️ <b>Remove Store - {stores_data[category]['name']}</b>\n\n<i>Select a store to remove:</i>"
+            
+            buttons = []
+            for store_id, store in stores.items():
+                buttons.append([Button.inline(store['name'], f"admin_store_remove_{category}_{store_id}".encode())])
+            
+            buttons.append([Button.inline("🔙 Categories", b"admin_store_remove_category")])
+            
+            await safe_edit(event, message, buttons=buttons)
+        
+        # Admin: Remove Store - Confirm
+        elif data.startswith("admin_store_remove_") and not data.startswith("admin_store_remove_list_"):
+            if not is_admin(user_id):
+                await event.answer("❌ Admin only!", alert=True)
+                return
+            
+            parts = data.replace("admin_store_remove_", "").split("_", 1)
+            if len(parts) == 2:
+                category = parts[0]
+                store_id = parts[1]
+                
+                stores_data = load_stores()
+                if category in stores_data and store_id in stores_data[category]['stores']:
+                    store_name = stores_data[category]['stores'][store_id]['name']
+                    
+                    # Remove store
+                    del stores_data[category]['stores'][store_id]
+                    
+                    if save_stores(stores_data):
+                        await event.answer(f"✅ Store '{store_name}' removed!", alert=True)
+                        
+                        message = (
+                            f"✅ <b>Store Removed</b>\n\n"
+                            f"🗑️ <b>{store_name}</b> has been removed from <b>{stores_data[category]['name']}</b>\n\n"
+                            f"<i>Select an action:</i>"
+                        )
+                        
+                        buttons = [
+                            [Button.inline("➕ Add Store", b"admin_store_add_category")],
+                            [Button.inline("✏️ Edit Store", b"admin_store_edit_category")],
+                            [Button.inline("🗑️ Remove Store", b"admin_store_remove_category")],
+                            [Button.inline("🔙 Admin Panel", b"admin_panel")]
+                        ]
+                        
+                        await safe_edit(event, message, buttons=buttons)
+                    else:
+                        await event.answer("❌ Failed to save changes", alert=True)
         
         # Vouches - Reviews
         elif data == "vouches":
@@ -4999,11 +5442,9 @@ async def callback_handler(event):
             
             try:
                 total = float(order['order_data']['order_total'])
-                fee = calculate_fee(total, order['store_info']['fee_percentage'], order['store_info']['fee_fixed'])
-                total_with_fee = total + fee
+                fee = calculate_fee(total, order['store_info']['fee_percentage'])
             except:
                 fee = 0
-                total_with_fee = 0
             
             message = (
                 f"📦 <b>Order Details (Admin View)</b>\n\n"
@@ -5012,9 +5453,9 @@ async def callback_handler(event):
                 f"💳 Payment: {order.get('payment_status', 'unpaid')}\n\n"
                 f"👤 Customer ID: <code>{order['user_id']}</code>\n"
                 f"🏪 {order['store_info']['name']}\n"
-                f"💰 Amount: ${order['order_data']['order_total']}\n"
-                f"💵 Fee: ${fee}\n"
-                f"💸 Total: <b>${total_with_fee}</b>\n\n"
+                f"💰 Order Total: ${order['order_data']['order_total']}\n"
+                f"💵 Fee ({order['store_info']['fee_percentage']}%): ${fee}\n"
+                f"💸 Customer Pays: <b>${fee}</b>\n\n"
                 f"📅 Ordered: {order['timestamp']}\n"
             )
             
@@ -5184,8 +5625,9 @@ print(f"👥 Group ID: {GROUP_ID}")
 print(f"⭐ Vouches Channel: {VOUCHES_CHANNEL_ID}")
 print(f"📦 Orders Channel: {ORDERS_CHANNEL_ID}")
 print(f"💳 Payment Channel: {PAYMENT_NOTIFICATION_CHANNEL}")
-print(f"🛍️ Categories: {len(STORES)}")
-total_stores = sum(len(cat['stores']) for cat in STORES.values())
+stores_data = load_stores()
+print(f"🛍️ Categories: {len(stores_data)}")
+total_stores = sum(len(cat['stores']) for cat in stores_data.values())
 print(f"🏪 Total Stores: {total_stores}")
 print(f"📦 Boxing Services: {len(BOXING_SERVICES)}")
 print("="*60)
